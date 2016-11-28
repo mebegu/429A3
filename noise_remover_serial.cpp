@@ -17,6 +17,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include "mpi.h"
+#include <omp.h>
 
 #define MATCH(s) (!strcmp(argv[ac], (s)))
 
@@ -37,10 +38,12 @@ void update_image_ghostcells(unsigned char *image, int height, int width);
 void update_coeff_ghostcells(float *coeff, int height, int width);
 
 int main(int argc, char *argv[]) {
-	int numprocs, rank, namelen;
+	int numprocs, rank, namelen, provided;
 	char processor_name[MPI_MAX_PROCESSOR_NAME];
 
 	MPI_Init(&argc, &argv);
+
+	//MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Get_processor_name(processor_name, &namelen);
@@ -59,11 +62,11 @@ int main(int argc, char *argv[]) {
 	double tmp, sum, sum2;	// calculation variables
 	float gradient_square, laplacian, num, den, std_dev2, divergence;	// calculation variables
 	float *diff_coef;	// diffusion coefficient
-	float *temp_diff_coef;
 	float diff_coef_north, diff_coef_south, diff_coef_west, diff_coef_east;	// directional diffusion coefficients
 	long k, k2;	// current pixel index
 	int px=0, py=0;
 	time_1 = get_time();
+
 
 	// Part II: parse command line arguments
 	if(argc<2) {
@@ -135,7 +138,7 @@ int main(int argc, char *argv[]) {
 	int disp = 0;
 	int loc_size = (width+2)*((height/numprocs) + 2);
 	int loc_disp = (width+2) * (height/numprocs);
-
+	displs[0] = 0;
 
 	for(int i=0; i< numprocs; i++){
 		loc_sizes[i] = loc_size;
@@ -148,69 +151,61 @@ int main(int argc, char *argv[]) {
 			//if(i == rank) loc_height++;
 		}
 	}
+
 	printf("local sizes %d Rank: %d\n",loc_sizes[rank], rank);
 
 	loc_image = (unsigned char*) malloc(sizeof(unsigned char) * loc_sizes[rank]);
-
+//printf("initialized...\n");
 	MPI_Scatterv(image, loc_sizes, displs, MPI_UNSIGNED_CHAR, loc_image, loc_sizes[rank], MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
 	/*printf("sum %f Rank: %d\n",sum, rank);
 	printf("sum2 %f Rank: %d\n",sum2, rank);*/
-
+	printf("Scattered...\n");
 
 	time_3 = get_time();
 
 
 	// Part IV: allocate variables
 	loc_height = loc_sizes[rank] / (width+2);
-	int num_ghosts = 2 * width + 2 * loc_height;
+	int num_ghosts = 2 * width + 2 * (loc_height-2);
 	north_deriv = (float*) malloc(sizeof(float) * (loc_sizes[rank] - num_ghosts));	// north derivative
 	south_deriv = (float*) malloc(sizeof(float) * (loc_sizes[rank] - num_ghosts));	// south derivative
 	west_deriv = (float*) malloc(sizeof(float) * (loc_sizes[rank] - num_ghosts));	// west derivative
 	east_deriv = (float*) malloc(sizeof(float) * (loc_sizes[rank] - num_ghosts));		// east derivative
 	diff_coef  = (float*) malloc(sizeof(float) * loc_sizes[rank]);	// diffusion coefficient
-	temp_diff_coef  = (float*) malloc(sizeof(float) * loc_sizes[rank]);	// diffusion coefficient
 
 	time_4 = get_time();
 
 	// Part V: compute --- n_iter * (3 * height * width + 41 * (height-1) * (width-1) + 6) floating point arithmetic operations in totaL
-	for (int iter = 0; iter < n_iter; iter++) {
+	for (int iter = 0; iter < n_iter+1; iter++) {
 
-
-		//update_image_ghostcells(image, height+2, width+2);
-
-		// REDUCTION AND STATISTICS
-		// --- 3 floating point arithmetic operations per element -> 3*height*width in total
-		/*for (int i = 1; i <= height; i++) {
-			for (int j = 1; j <= width; j++) {
-			        tmp = image[i * (width+2) + j];	// current pixel value
-				sum += tmp; // --- 1 floating point arithmetic operations
-				sum2 += tmp * tmp; // --- 2 floating point arithmetic operations
-			}
-		}*/
 
 		double loc_sum = 0;
 		double loc_sum2 = 0;
+
+		#pragma omp parallel for reduction(+:loc_sum, loc_sum2)
 		for(int i = width+2; i < loc_sizes[rank]-width-2; ++i) {
-			loc_sum += loc_image[i];
-			loc_sum2 += loc_image[i]*loc_image[i];
+			double temp = loc_image[i];
+			loc_sum += temp;
+			loc_sum2 += temp * temp;
 		}
+
 		MPI_Allreduce(&loc_sum, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 		MPI_Allreduce(&loc_sum2, &sum2, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
 
-		printf("Actual sum %f\n", sum);
-		printf("Actual sum2 %f\n", sum2);
 		mean = sum / (width*height); // --- 1 floating point arithmetic operations
 		variance = (sum2 / (width*height)) - mean * mean; // --- 3 floating point arithmetic operations
 		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
-		printf("mean: %f, variance: %f, std_dev: %f\n", mean, variance, std_dev);
-
+		if(rank == 0)printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
+		if (iter == n_iter) break;
 		//COMPUTE 1
 		// --- 32 floating point arithmetic operations per element -> 32*(height-1)*(width-1) in total
+		#pragma omp parallel for private(k2, k, gradient_square, laplacian, num, den, std_dev2) collapse(2)
 		for (int i = 1; i <= loc_height-2 ; i++) {
 			for (int j = 1; j <= width ; j++) {
 			  k2 = (i-1) * width + (j-1);	// position of current element
 			  k = i * (width+2) + j;
+
 
 			  north_deriv[k2] = loc_image[(i - 1) * (width+2) + j] - loc_image[k];	// north derivative --- 1 floating point arithmetic operations
 			  south_deriv[k2] = loc_image[(i + 1) * (width+2) + j] - loc_image[k];	// south derivative --- 1 floating point arithmetic operations
@@ -231,55 +226,36 @@ int main(int argc, char *argv[]) {
 			  } else if (diff_coef[k] > 1)	{
 			    diff_coef[k] = 1;
 			  }
-				if(diff_coef[k] == 0)
-					count1++;
-
-				temp_diff_coef[k] = diff_coef[k];
 
 
 			}
 		}
-
+		#pragma omp parallel for
 		for (int h = 1; h < loc_height-1; h++) {
-			diff_coef[h*(width+2) + width+1] = diff_coef[h*(width+2) + 1];
+			diff_coef[h*(width+2) + width+1] = diff_coef[h*(width+2)+1];
 		}
 
-		if (rank != 0) {
-			MPI_Send(diff_coef+(width+2), width+2, MPI_FLOAT, rank-1, 0,
-				MPI_COMM_WORLD);//, NULL);
+		if (rank%2 == 1) {
+			MPI_Send(diff_coef+width+2, width+2, MPI_FLOAT, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD);
+			MPI_Recv(diff_coef+((loc_height-1)*(width+2)), width+2, MPI_FLOAT, (rank+1)%numprocs, 2,MPI_COMM_WORLD, NULL);
+
+		}
+		else {
+			MPI_Recv(diff_coef+((loc_height-1)*(width+2)), width+2, MPI_FLOAT, (rank+1)%numprocs, 1, MPI_COMM_WORLD, NULL);
+			MPI_Send(diff_coef+width+2, width+2, MPI_FLOAT, (rank-1+numprocs)%numprocs, 2, MPI_COMM_WORLD);
 		}
 
-		if (rank != numprocs-1) {
-			MPI_Recv(diff_coef + ((width+2)* (loc_height-1)),
-				width+2, MPI_FLOAT, rank+1, 0, MPI_COMM_WORLD, NULL
-			);
-		}
-
-		if(rank == 0){
-			MPI_Send(diff_coef+(width+2), width+2, MPI_FLOAT,  numprocs-1, 0,
-				MPI_COMM_WORLD);
-		}
-
-		if (rank == numprocs-1){
-			MPI_Recv(diff_coef + ((width+2)* (loc_height-1)),
-				width+2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, NULL
-			);
-		}
 		//update_coeff_ghostcells(diff_coef, height+2, width+2);
 
 
-
+		//printf("%d\n",loc_height );
 		// COMPUTE 2
 		// divergence and image update --- 10 floating point arithmetic operations per element -> 10*(height-1)*(width-1) in total
+		#pragma omp parallel for private(diff_coef_north, diff_coef_south, diff_coef_west, diff_coef_east, divergence, k2,k)  collapse(2)
 		for (int i = 1; i <= loc_height-2; i++) {
 			for (int j = 1; j <= width; j++) {
 			  k2 = (i-1) * width + (j-1);
 			  k = i * (width+2) + j;	// get position of current element
-				if(diff_coef[k] != temp_diff_coef[k])
-					diff_coef[k] = temp_diff_coef[k];
-
-				if(diff_coef[k] != temp_diff_coef[k])
-				count2++;
 
 			  diff_coef_north = diff_coef[k];	// north diffusion coefficient
 			  diff_coef_south = diff_coef[(i + 1) * (width+2) + j];	// south diffusion coefficient
@@ -292,18 +268,35 @@ int main(int argc, char *argv[]) {
 				loc_image[k] = loc_image[k] + 0.25 * lambda * divergence; // --- 3 floating point arithmetic operations
 			}
 		}
-	}
-	/*for (int i = 0; i < numprocs; i++) {
-			displs[i] += width+2;
 
-			loc_sizes[i] -= 2 * (width+2);
-	}*/
-	sum = 0;
-	for(int i = width+2; i < loc_sizes[rank]-width-2; ++i) {
-		sum += loc_image[i];
+		#pragma omp parallel for
+		for (int h = 1; h < loc_height-1; h++) {
+			loc_image[h*(width+2)] = loc_image[h*(width+2) + width];
+			loc_image[h*(width+2)+width+1] = loc_image[h*(width+2)+1];
+		}
+
+		if (rank%2 == 1) {
+			MPI_Send(loc_image+width+2, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD);
+			MPI_Recv(loc_image+((loc_height-1)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1,MPI_COMM_WORLD, NULL);
+		}
+		else {
+			MPI_Recv(loc_image+((loc_height-1)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1, MPI_COMM_WORLD, NULL);
+			MPI_Send(loc_image+width+2, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1, MPI_COMM_WORLD);
+		}
+
+
+		if (rank%2 == 1) {
+			MPI_Send(loc_image+((loc_height-2)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1,MPI_COMM_WORLD);
+			MPI_Recv(loc_image, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD, NULL);
+		}
+		else {
+			MPI_Recv(loc_image, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1, MPI_COMM_WORLD, NULL);
+			MPI_Send(loc_image+((loc_height-2)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1, MPI_COMM_WORLD);
+		}
+
+
 	}
-	printf("c1 %f rank: %d\n", sum, rank);
-	//printf("c2 %d rank: %d\n", sum, rank);
+
 
 
 	MPI_Gatherv(loc_image, loc_sizes[rank],
@@ -311,15 +304,7 @@ int main(int argc, char *argv[]) {
 		loc_sizes, displs, MPI_UNSIGNED_CHAR,
 		0, MPI_COMM_WORLD
 	);
-	/*if (rank == 0) {	//Copy computed images to master
-		for (int i = 1; i < numprocs; ++i) {
-			MPI_Recv(image)
-		}
-	} else {
-		MPI_Send(loc_image+width+2, (loc_height-2)*(width+2), MPI_UNSIGNED_CHAR,
-			0, 0, MPI_COMM_WORLD);
-	}*/
-	printf("Here\n");
+
 	if (rank != 0) {
 		MPI_Finalize();
 		return 0;
