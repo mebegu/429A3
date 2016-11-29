@@ -196,7 +196,31 @@ int main(int argc, char *argv[]) {
 		mean = sum / (width*height); // --- 1 floating point arithmetic operations
 		variance = (sum2 / (width*height)) - mean * mean; // --- 3 floating point arithmetic operations
 		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
-		if(rank == 0)printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
+		if(rank == 0) printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
+		#pragma omp parallel for
+		for (int h = 1; h < loc_height-1; h++) {
+			loc_image[h*(width+2)] = loc_image[h*(width+2) + width];
+			loc_image[h*(width+2)+width+1] = loc_image[h*(width+2)+1];
+		}
+
+		if (rank%2 == 1) {
+			MPI_Send(loc_image+width+2, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD);
+			MPI_Recv(loc_image+((loc_height-1)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1,MPI_COMM_WORLD, NULL);
+		}
+		else {
+			MPI_Recv(loc_image+((loc_height-1)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1, MPI_COMM_WORLD, NULL);
+			MPI_Send(loc_image+width+2, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1, MPI_COMM_WORLD);
+		}
+
+
+		if (rank%2 == 1) {
+			MPI_Send(loc_image+((loc_height-2)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1,MPI_COMM_WORLD);
+			MPI_Recv(loc_image, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD, NULL);
+		}
+		else {
+			MPI_Recv(loc_image, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1, MPI_COMM_WORLD, NULL);
+			MPI_Send(loc_image+((loc_height-2)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1, MPI_COMM_WORLD);
+		}
 		if (iter == n_iter) break;
 		//COMPUTE 1
 		// --- 32 floating point arithmetic operations per element -> 32*(height-1)*(width-1) in total
@@ -269,32 +293,7 @@ int main(int argc, char *argv[]) {
 			}
 		}
 
-		#pragma omp parallel for
-		for (int h = 1; h < loc_height-1; h++) {
-			loc_image[h*(width+2)] = loc_image[h*(width+2) + width];
-			loc_image[h*(width+2)+width+1] = loc_image[h*(width+2)+1];
-		}
-
-		if (rank%2 == 1) {
-			MPI_Send(loc_image+width+2, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD);
-			MPI_Recv(loc_image+((loc_height-1)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1,MPI_COMM_WORLD, NULL);
-		}
-		else {
-			MPI_Recv(loc_image+((loc_height-1)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(loc_image+width+2, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1, MPI_COMM_WORLD);
-		}
-
-
-		if (rank%2 == 1) {
-			MPI_Send(loc_image+((loc_height-2)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1,MPI_COMM_WORLD);
-			MPI_Recv(loc_image, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD, NULL);
-		}
-		else {
-			MPI_Recv(loc_image, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(loc_image+((loc_height-2)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1, MPI_COMM_WORLD);
-		}
-
-
+		//printf("here\n");
 	}
 
 
