@@ -178,31 +178,6 @@ int main(int argc, char *argv[]) {
 	// Part V: compute --- n_iter * (3 * height * width + 41 * (height-1) * (width-1) + 6) floating point arithmetic operations in totaL
 	for (int iter = 0; iter < n_iter+1; iter++) {
 
-
-		double loc_sum = 0;
-		double loc_sum2 = 0;
-
-		#pragma omp parallel for reduction(+:loc_sum, loc_sum2)
-		for(int i = width+2; i < loc_sizes[rank]-width-2; ++i) {
-			double temp = loc_image[i];
-			loc_sum += temp;
-			loc_sum2 += temp * temp;
-		}
-
-		MPI_Allreduce(&loc_sum, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-		MPI_Allreduce(&loc_sum2, &sum2, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-
-		mean = sum / (width*height); // --- 1 floating point arithmetic operations
-		variance = (sum2 / (width*height)) - mean * mean; // --- 3 floating point arithmetic operations
-		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
-		if(rank == 0) printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
-		#pragma omp parallel for
-		for (int h = 1; h < loc_height-1; h++) {
-			loc_image[h*(width+2)] = loc_image[h*(width+2) + width];
-			loc_image[h*(width+2)+width+1] = loc_image[h*(width+2)+1];
-		}
-
 		if (rank%2 == 1) {
 			MPI_Send(loc_image+width+2, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD);
 			MPI_Recv(loc_image+((loc_height-1)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1,MPI_COMM_WORLD, NULL);
@@ -221,7 +196,36 @@ int main(int argc, char *argv[]) {
 			MPI_Recv(loc_image, width+2, MPI_UNSIGNED_CHAR, (rank-1+numprocs)%numprocs, 1, MPI_COMM_WORLD, NULL);
 			MPI_Send(loc_image+((loc_height-2)*(width+2)), width+2, MPI_UNSIGNED_CHAR, (rank+1)%numprocs, 1, MPI_COMM_WORLD);
 		}
+
+		#pragma omp parallel for
+		for (int h = 1; h < loc_height-1; h++) {
+			loc_image[h*(width+2)] = loc_image[h*(width+2) + width];
+			loc_image[h*(width+2)+width+1] = loc_image[h*(width+2)+1];
+		}
+
 		if (iter == n_iter) break;
+		//REDUCTION AND STATISTICS
+		double loc_sum = 0;
+		double loc_sum2 = 0;
+
+		#pragma omp parallel for reduction(+:loc_sum, loc_sum2)
+		for(int i = width+2; i < loc_sizes[rank]-width-2; ++i) {
+			if (i%(width+2) != 0 && i%(width+2) != (width+1)) {
+				double temp = loc_image[i];
+				loc_sum += temp;
+				loc_sum2 += temp * temp;
+			}
+		}
+
+		MPI_Allreduce(&loc_sum, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		MPI_Allreduce(&loc_sum2, &sum2, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+
+		mean = sum / (width*height); // --- 1 floating point arithmetic operations
+		variance = (sum2 / (width*height)) - mean * mean; // --- 3 floating point arithmetic operations
+		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
+		if(rank == 0) printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
+
 		//COMPUTE 1
 		// --- 32 floating point arithmetic operations per element -> 32*(height-1)*(width-1) in total
 		#pragma omp parallel for private(k2, k, gradient_square, laplacian, num, den, std_dev2) collapse(2)
@@ -249,11 +253,10 @@ int main(int argc, char *argv[]) {
 			    diff_coef[k] = 0;
 			  } else if (diff_coef[k] > 1)	{
 			    diff_coef[k] = 1;
-			  }
-
-
+			 }
 			}
 		}
+
 		#pragma omp parallel for
 		for (int h = 1; h < loc_height-1; h++) {
 			diff_coef[h*(width+2) + width+1] = diff_coef[h*(width+2)+1];
@@ -262,7 +265,6 @@ int main(int argc, char *argv[]) {
 		if (rank%2 == 1) {
 			MPI_Send(diff_coef+width+2, width+2, MPI_FLOAT, (rank-1+numprocs)%numprocs, 1,MPI_COMM_WORLD);
 			MPI_Recv(diff_coef+((loc_height-1)*(width+2)), width+2, MPI_FLOAT, (rank+1)%numprocs, 2,MPI_COMM_WORLD, NULL);
-
 		}
 		else {
 			MPI_Recv(diff_coef+((loc_height-1)*(width+2)), width+2, MPI_FLOAT, (rank+1)%numprocs, 1, MPI_COMM_WORLD, NULL);
@@ -296,8 +298,10 @@ int main(int argc, char *argv[]) {
 		//printf("here\n");
 	}
 
-
-
+	for (size_t i = 0; i < numprocs; i++) {
+		displs[i] += (width+2);
+		loc_sizes[i] -= 2*(width+2);
+	}
 	MPI_Gatherv(loc_image, loc_sizes[rank],
 		MPI_UNSIGNED_CHAR, image,
 		loc_sizes, displs, MPI_UNSIGNED_CHAR,
