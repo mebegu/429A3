@@ -321,64 +321,65 @@ int run_1D(int argc, char *argv[])
 		free(displs);
 		free(loc_sizes);
 		free(loc_image);
-		MPI_Finalize();
-		return 0;
+		//MPI_Finalize();
+		//return 0;
 	}
 
-
+   else {
 	//Copy back the extendted image array
-	for (int i = 1; i <= height ; i++) {
-	  for (int j = 1; j <= width ; j++) {
-	    k = i * (width+2) + j;	// position of current element
-	    k2 = (i-1) * width + (j-1);
-	    tmp_image[k2] = (unsigned char)image[k];
-	  }
-	}
+   	for (int i = 1; i <= height ; i++) {
+   	  for (int j = 1; j <= width ; j++) {
+   	    k = i * (width+2) + j;	// position of current element
+   	    k2 = (i-1) * width + (j-1);
+   	    tmp_image[k2] = (unsigned char)image[k];
+   	  }
+   	}
 
-	// Part VI: write image to file
-	stbi_write_png(outputname, width, height, pixelWidth, tmp_image, 0);
-	time_6 = get_time();
+   	// Part VI: write image to file
+   	stbi_write_png(outputname, width, height, pixelWidth, tmp_image, 0);
+   	time_6 = get_time();
 
-	// Part VII: get average of sum of pixels for testing and calculate GFLOPS
-	// FOR VALIDATION - DO NOT PARALLELIZE
-	double test = 0;
-	for (int i = 1; i <= height; i++) {
-	  for (int j = 1; j <= width; j++) {
-	    test += image[i * (width+2) + j];
-	  }
-	}
-	test /= n_pixels;
+   	// Part VII: get average of sum of pixels for testing and calculate GFLOPS
+   	// FOR VALIDATION - DO NOT PARALLELIZE
+   	double test = 0;
+   	for (int i = 1; i <= height; i++) {
+   	  for (int j = 1; j <= width; j++) {
+   	    test += image[i * (width+2) + j];
+   	  }
+   	}
+   	test /= n_pixels;
 
 
-	float gflops = (float) (n_iter * 1E-9 * (3 * height * width + 41 * (height-1) * (width-1) + 6)) / (time_5 - time_4);
-	time_7 = get_time();
+   	float gflops = (float) (n_iter * 1E-9 * (3 * height * width + 41 * (height-1) * (width-1) + 6)) / (time_5 - time_4);
+   	time_7 = get_time();
 
-	// Part VII: deallocate variables
-	stbi_image_free(tmp_image);
-	free(image);
-	free(north_deriv);
-	free(south_deriv);
-	free(west_deriv);
-	free(east_deriv);
-	free(diff_coef);
-	free(displs);
-	free(loc_sizes);
-	free(loc_image);
-	time_8 = get_time();
+   	// Part VII: deallocate variables
+   	stbi_image_free(tmp_image);
+   	free(image);
+   	free(north_deriv);
+   	free(south_deriv);
+   	free(west_deriv);
+   	free(east_deriv);
+   	free(diff_coef);
+   	free(displs);
+   	free(loc_sizes);
+   	free(loc_image);
+   	time_8 = get_time();
 
-	// print
-	printf("Time spent in different stages of the application:\n");
-	printf("%9.6f s => Part I: allocate and initialize variables\n", (time_1 - time_0));
-	printf("%9.6f s => Part II: parse command line arguments\n", (time_2 - time_1));
-	printf("%9.6f s => Part III: read image\n", (time_3 - time_2));
-	printf("%9.6f s => Part IV: allocate variables\n", (time_4 - time_3));
-	printf("%9.6f s => Part V: compute\n", (time_5 - time_4));
-	printf("%9.6f s => Part VI: write image to file\n", (time_6 - time_5));
-	printf("%9.6f s => Part VII: get average of sum of pixels for testing and calculate GFLOPS\n", (time_7 - time_6));
-	printf("%9.6f s => Part VIII: deallocate variables\n", (time_8 - time_7));
-	printf("Total time: %9.6f s\n", (time_8 - time_0));
-	printf("Average of sum of pixels: %9.6f\n", test);
-	printf("GFLOPS: %f\n", gflops);
+   	// print
+   	printf("Time spent in different stages of the application:\n");
+   	printf("%9.6f s => Part I: allocate and initialize variables\n", (time_1 - time_0));
+   	printf("%9.6f s => Part II: parse command line arguments\n", (time_2 - time_1));
+   	printf("%9.6f s => Part III: read image\n", (time_3 - time_2));
+   	printf("%9.6f s => Part IV: allocate variables\n", (time_4 - time_3));
+   	printf("%9.6f s => Part V: compute\n", (time_5 - time_4));
+   	printf("%9.6f s => Part VI: write image to file\n", (time_6 - time_5));
+   	printf("%9.6f s => Part VII: get average of sum of pixels for testing and calculate GFLOPS\n", (time_7 - time_6));
+   	printf("%9.6f s => Part VIII: deallocate variables\n", (time_8 - time_7));
+   	printf("Total time: %9.6f s\n", (time_8 - time_0));
+   	printf("Average of sum of pixels: %9.6f\n", test);
+   	printf("GFLOPS: %f\n", gflops);
+   }
    MPI_Finalize();
 	return 0;
 }
@@ -749,66 +750,67 @@ int run_2D(int argc, char *argv[])
       free(img_recv_buffer);
       free(img_send_buffer);
       free(loc_image);
-      MPI_Finalize();
-      return 0;
+      //MPI_Finalize();
+      //return 0;
    }
 
-
-   //Copy back the extendted image array
-   for (int i = 1; i <= height ; i++) {
-      for (int j = 1; j <= width ; j++) {
-         k = i * (width+2) + j;	// position of current element
-         k2 = (i-1) * width + (j-1);
-         tmp_image[k2] = (unsigned char)image[k];
+   if (rank == 0) {
+      //Copy back the extendted image array
+      for (int i = 1; i <= height ; i++) {
+         for (int j = 1; j <= width ; j++) {
+            k = i * (width+2) + j;	// position of current element
+            k2 = (i-1) * width + (j-1);
+            tmp_image[k2] = (unsigned char)image[k];
+         }
       }
-   }
 
-   // Part VI: write image to file
-   stbi_write_png(outputname, width, height, pixelWidth, tmp_image, 0);
-   time_6 = get_time();
+      // Part VI: write image to file
+      stbi_write_png(outputname, width, height, pixelWidth, tmp_image, 0);
+      time_6 = get_time();
 
-   // Part VII: get average of sum of pixels for testing and calculate GFLOPS
-   // FOR VALIDATION - DO NOT PARALLELIZE
-   double test = 0;
-   for (int i = 1; i <= height; i++) {
-      for (int j = 1; j <= width; j++) {
-         test += image[i * (width+2) + j];
+      // Part VII: get average of sum of pixels for testing and calculate GFLOPS
+      // FOR VALIDATION - DO NOT PARALLELIZE
+      double test = 0;
+      for (int i = 1; i <= height; i++) {
+         for (int j = 1; j <= width; j++) {
+            test += image[i * (width+2) + j];
+         }
       }
+      test /= n_pixels;
+
+
+      float gflops = (float) (n_iter * 1E-9 * (3 * height * width + 41 * (height-1) * (width-1) + 6)) / (time_5 - time_4);
+      time_7 = get_time();
+
+      // Part VII: deallocate variables
+      stbi_image_free(tmp_image);
+      free(image);
+      free(north_deriv);
+      free(south_deriv);
+      free(west_deriv);
+      free(east_deriv);
+      free(diff_coef);
+      free(diff_recv_buffer);
+      free(diff_send_buffer);
+      free(img_recv_buffer);
+      free(img_send_buffer);
+      free(loc_image);
+      time_8 = get_time();
+
+      // print
+      printf("Time spent in different stages of the application:\n");
+      printf("%9.6f s => Part I: allocate and initialize variables\n", (time_1 - time_0));
+      printf("%9.6f s => Part II: parse command line arguments\n", (time_2 - time_1));
+      printf("%9.6f s => Part III: read image\n", (time_3 - time_2));
+      printf("%9.6f s => Part IV: allocate variables\n", (time_4 - time_3));
+      printf("%9.6f s => Part V: compute\n", (time_5 - time_4));
+      printf("%9.6f s => Part VI: write image to file\n", (time_6 - time_5));
+      printf("%9.6f s => Part VII: get average of sum of pixels for testing and calculate GFLOPS\n", (time_7 - time_6));
+      printf("%9.6f s => Part VIII: deallocate variables\n", (time_8 - time_7));
+      printf("Total time: %9.6f s\n", (time_8 - time_0));
+      printf("Average of sum of pixels: %9.6f\n", test);
+      printf("GFLOPS: %f\n", gflops);
    }
-   test /= n_pixels;
-
-
-   float gflops = (float) (n_iter * 1E-9 * (3 * height * width + 41 * (height-1) * (width-1) + 6)) / (time_5 - time_4);
-   time_7 = get_time();
-
-   // Part VII: deallocate variables
-   stbi_image_free(tmp_image);
-   free(image);
-   free(north_deriv);
-   free(south_deriv);
-   free(west_deriv);
-   free(east_deriv);
-   free(diff_coef);
-   free(diff_recv_buffer);
-   free(diff_send_buffer);
-   free(img_recv_buffer);
-   free(img_send_buffer);
-   free(loc_image);
-   time_8 = get_time();
-
-   // print
-   printf("Time spent in different stages of the application:\n");
-   printf("%9.6f s => Part I: allocate and initialize variables\n", (time_1 - time_0));
-   printf("%9.6f s => Part II: parse command line arguments\n", (time_2 - time_1));
-   printf("%9.6f s => Part III: read image\n", (time_3 - time_2));
-   printf("%9.6f s => Part IV: allocate variables\n", (time_4 - time_3));
-   printf("%9.6f s => Part V: compute\n", (time_5 - time_4));
-   printf("%9.6f s => Part VI: write image to file\n", (time_6 - time_5));
-   printf("%9.6f s => Part VII: get average of sum of pixels for testing and calculate GFLOPS\n", (time_7 - time_6));
-   printf("%9.6f s => Part VIII: deallocate variables\n", (time_8 - time_7));
-   printf("Total time: %9.6f s\n", (time_8 - time_0));
-   printf("Average of sum of pixels: %9.6f\n", test);
-   printf("GFLOPS: %f\n", gflops);
    MPI_Finalize();
    return 0;
 }
