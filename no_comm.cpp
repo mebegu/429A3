@@ -128,8 +128,8 @@ int main(int argc, char *argv[]) {
 
 	}
 
-	//MPI_Bcast(&height, 1, MPI_INT, 0, MPI_COMM_WORLD);
-	//MPI_Bcast(&width, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&height, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&width, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	int *displs =  (int *) malloc(sizeof(int)*numprocs);
 	int *loc_sizes = (int *) malloc(sizeof(int) *  numprocs);
