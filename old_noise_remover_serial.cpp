@@ -117,7 +117,7 @@ int main(int argc, char *argv[]) {
 	for (int iter = 0; iter < n_iter; iter++) {
 		sum = 0;
 		sum2 = 0;
-		printf("%d\n", iter);
+		//printf("%d\n", iter);
 		update_image_ghostcells(image, height+2, width+2);
 
 		// REDUCTION AND STATISTICS
@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
 		mean = sum / n_pixels; // --- 1 floating point arithmetic operations
 		variance = (sum2 / n_pixels) - mean * mean; // --- 3 floating point arithmetic operations
 		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
-
+		printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
 		//COMPUTE 1
 		// --- 32 floating point arithmetic operations per element -> 32*(height-1)*(width-1) in total
 		for (int i = 1; i <= height ; i++) {

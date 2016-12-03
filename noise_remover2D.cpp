@@ -155,6 +155,7 @@ int main(int argc, char *argv[]) {
                //printf("r:%d\n", r);
                for (int c = currant_start_col; c < currant_start_col + pwidth; c++) {
                   local_buf[index++] = image[r*(width+2) + c];
+                  //local_buf[(r-currant_start_row)*pwidth+(c-currant_start_col)] = image[r*(width+2) + c];
                }
             }
             //MPI_Finalize();
@@ -168,6 +169,7 @@ int main(int argc, char *argv[]) {
    }
    loc_image = (unsigned char *)malloc(sizeof(unsigned char) * (loc_height+2) * (loc_width+2));
    if (rank == 0) {
+      #pragma omp parallel for  collapse(2)
       for (int i = 0; i < pheight; ++i) {
          for (int j = 0; j < pwidth; ++j) {
             loc_image[i*pwidth + j] = image[i*(width+2) + j];
@@ -179,6 +181,7 @@ int main(int argc, char *argv[]) {
       //printf("%d received...\n", rank);
    }
    //COMPUTATION
+   time_3 = get_time();
    // Part IV: allocate variables
 	//loc_height = loc_sizes[rank] / (width+2);
    int my_y = rank / px;
@@ -195,6 +198,8 @@ int main(int argc, char *argv[]) {
    float *diff_send_buffer = (float*)malloc(sizeof(float) * (loc_height+2));
    float *diff_recv_buffer = (float*)malloc(sizeof(float) * (loc_height+2));
 
+   time_4 = get_time();
+
    for (int iter = 0; iter < n_iter+1; iter++) {
       //TODO: Send the image ghosts
 
@@ -203,21 +208,21 @@ int main(int argc, char *argv[]) {
       int lower = ((my_y+1)%py)*px + my_x;
       if (my_y%2 == 1) {
 			MPI_Send(loc_image+loc_width+2, loc_width+2, MPI_UNSIGNED_CHAR, upper, 1, MPI_COMM_WORLD);
-			MPI_Recv(loc_image+((loc_height+1)*(loc_width+2)), loc_width+2, MPI_UNSIGNED_CHAR, lower, 1,MPI_COMM_WORLD, NULL);
+			MPI_Recv(loc_image+((loc_height+1)*(loc_width+2)), loc_width+2, MPI_UNSIGNED_CHAR, lower, 2,MPI_COMM_WORLD, NULL);
 		}
 		else {
 			MPI_Recv(loc_image+((loc_height+1)*(loc_width+2)), loc_width+2, MPI_UNSIGNED_CHAR, lower, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(loc_image+loc_width+2, loc_width+2, MPI_UNSIGNED_CHAR, upper, 1, MPI_COMM_WORLD);
+			MPI_Send(loc_image+loc_width+2, loc_width+2, MPI_UNSIGNED_CHAR, upper, 2, MPI_COMM_WORLD);
 		}
 
       //Send to below/receive from up
 		if (my_y%2 == 1) {
-			MPI_Send(loc_image+((loc_height)*(loc_width+2)), loc_width+2, MPI_UNSIGNED_CHAR, lower, 1, MPI_COMM_WORLD);
-			MPI_Recv(loc_image, loc_width+2, MPI_UNSIGNED_CHAR, upper, 1,MPI_COMM_WORLD, NULL);
+			MPI_Send(loc_image+((loc_height)*(loc_width+2)), loc_width+2, MPI_UNSIGNED_CHAR, lower, 3, MPI_COMM_WORLD);
+			MPI_Recv(loc_image, loc_width+2, MPI_UNSIGNED_CHAR, upper, 4,MPI_COMM_WORLD, NULL);
 		}
 		else {
-			MPI_Recv(loc_image, loc_width+2, MPI_UNSIGNED_CHAR, upper, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(loc_image+((loc_height)*(loc_width+2)), loc_width+2, MPI_UNSIGNED_CHAR, lower, 1, MPI_COMM_WORLD);
+			MPI_Recv(loc_image, loc_width+2, MPI_UNSIGNED_CHAR, upper, 3, MPI_COMM_WORLD, NULL);
+			MPI_Send(loc_image+((loc_height)*(loc_width+2)), loc_width+2, MPI_UNSIGNED_CHAR, lower, 4, MPI_COMM_WORLD);
 		}
 
       /*Send to right*/
@@ -225,37 +230,41 @@ int main(int argc, char *argv[]) {
       int left = (my_x+px-1)%px + my_y*px;
       //printf("rank %d,x %d, y %d,  right %d, left %d\n", rank, my_x, my_y, right, left);
       //Fill the image send buffer
+      #pragma omp parallel for
       for (int j = 0; j < (loc_height+2); j++) {
          img_send_buffer[j] = loc_image[j*(loc_width+2) + loc_width];
       }
       //Send buffers
       if (my_x%2 == 1) {
-			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 1, MPI_COMM_WORLD);
-			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 1,MPI_COMM_WORLD, NULL);
+			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 5, MPI_COMM_WORLD);
+			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 6,MPI_COMM_WORLD, NULL);
 		}
 		else {
-			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 1, MPI_COMM_WORLD);
+			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 5, MPI_COMM_WORLD, NULL);
+			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 6, MPI_COMM_WORLD);
 		}
       //Fill the ghost cells
+      #pragma omp parallel for
       for (int j = 0; j < (loc_height+2); j++) {
          loc_image[j*(loc_width+2)] = img_recv_buffer[j];
       }
 
       /*Send to left*/
+      #pragma omp parallel for
       for (int j = 0; j < (loc_height+2); j++) {
-         img_send_buffer[j] = loc_image[j*(loc_width+2)];
+         img_send_buffer[j] = loc_image[j*(loc_width+2)+1];
       }
       //Send buffers
       if (my_x%2 == 1) {
-			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 1, MPI_COMM_WORLD);
-			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 1,MPI_COMM_WORLD, NULL);
+			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 7, MPI_COMM_WORLD);
+			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 8,MPI_COMM_WORLD, NULL);
 		}
 		else {
-			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 1, MPI_COMM_WORLD);
+			MPI_Recv(img_recv_buffer, loc_height+2, MPI_UNSIGNED_CHAR, right, 7, MPI_COMM_WORLD, NULL);
+			MPI_Send(img_send_buffer, loc_height+2, MPI_UNSIGNED_CHAR, left, 8, MPI_COMM_WORLD);
 		}
       //Fill the ghost cells
+      #pragma omp parallel for
       for (int j = 0; j < (loc_height+2); j++) {
          loc_image[j*(loc_width+2) + loc_width+1] = img_recv_buffer[j];
       }
@@ -266,9 +275,9 @@ int main(int argc, char *argv[]) {
 		#pragma omp parallel for reduction(+:loc_sum, loc_sum2)
 		for(int i = loc_width+2; i < loc_size-(loc_width+2); ++i) {
          if (i%(loc_width+2) != 0 && i%(loc_width+2) != (loc_width+1)) {
-				double temp = loc_image[i];
-				loc_sum += temp;
-				loc_sum2 += temp * temp;
+				tmp = loc_image[i];
+				loc_sum += tmp;
+				loc_sum2 += tmp * tmp;
 			}
 		}
       MPI_Allreduce(&loc_sum, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -276,7 +285,7 @@ int main(int argc, char *argv[]) {
       mean = sum / (width*height); // --- 1 floating point arithmetic operations
 		variance = (sum2 / (width*height)) - mean * mean; // --- 3 floating point arithmetic operations
 		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
-      if(rank == 0) printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
+      //if(rank == 0) printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
       //COMPUTE 1
       #pragma omp parallel for private(k2, k, gradient_square, laplacian, num, den, std_dev2) collapse(2)
 		for (int i = 1; i <= loc_height ; i++) {
@@ -306,35 +315,35 @@ int main(int argc, char *argv[]) {
 
 			}
 		}
-      for(int i=0; i < loc_size; i++)
-         if(diff_coef[k]>1 || diff_coef[k]< 0) printf("%f\n", diff_coef[k]);
+
 
       if (my_y%2 == 1) {
-			MPI_Send(diff_coef+loc_width+2, loc_width+2, MPI_FLOAT, upper, 1,MPI_COMM_WORLD);
-			MPI_Recv(diff_coef+((loc_height+1)*(loc_width+2)), loc_width+2, MPI_FLOAT, lower, 2,MPI_COMM_WORLD, NULL);
+			MPI_Send(diff_coef+loc_width+2, loc_width+2, MPI_FLOAT, upper, 9,MPI_COMM_WORLD);
+			MPI_Recv(diff_coef+((loc_height+1)*(loc_width+2)), loc_width+2, MPI_FLOAT, lower, 10,MPI_COMM_WORLD, NULL);
 		}
 		else {
-			MPI_Recv(diff_coef+((loc_height+1)*(loc_width+2)), loc_width+2, MPI_FLOAT, lower, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(diff_coef+loc_width+2, loc_width+2, MPI_FLOAT, upper, 2, MPI_COMM_WORLD);
+			MPI_Recv(diff_coef+((loc_height+1)*(loc_width+2)), loc_width+2, MPI_FLOAT, lower, 9, MPI_COMM_WORLD, NULL);
+			MPI_Send(diff_coef+loc_width+2, loc_width+2, MPI_FLOAT, upper, 10, MPI_COMM_WORLD);
 		}
 
       /*Send to left*/
-      for (int j = 1; j <= (loc_height); j++) {
-
+      #pragma omp parallel for
+      for (int j = 0; j <= (loc_height+1); j++) {
          diff_send_buffer[j] = diff_coef[j*(loc_width+2)+1];
       }
       //Send buffers
 
       if (my_x%2 == 1) {
-			MPI_Send(diff_send_buffer, loc_height+2, MPI_FLOAT, left, 1, MPI_COMM_WORLD);
-			MPI_Recv(diff_recv_buffer, loc_height+2, MPI_FLOAT, right, 1,MPI_COMM_WORLD, NULL);
+			MPI_Send(diff_send_buffer, loc_height+2, MPI_FLOAT, left, 11, MPI_COMM_WORLD);
+			MPI_Recv(diff_recv_buffer, loc_height+2, MPI_FLOAT, right, 12,MPI_COMM_WORLD, NULL);
 		}
 		else {
-			MPI_Recv(diff_recv_buffer, loc_height+2, MPI_FLOAT, right, 1, MPI_COMM_WORLD, NULL);
-			MPI_Send(diff_send_buffer, loc_height+2, MPI_FLOAT, left, 1, MPI_COMM_WORLD);
+			MPI_Recv(diff_recv_buffer, loc_height+2, MPI_FLOAT, right, 11, MPI_COMM_WORLD, NULL);
+			MPI_Send(diff_send_buffer, loc_height+2, MPI_FLOAT, left, 12, MPI_COMM_WORLD);
 		}
       //Fill the ghost cells
-      for (int j = 1; j <= loc_height; j++) {
+      #pragma omp parallel for
+      for (int j = 1; j <= loc_height+1; j++) {
          diff_coef[j*(loc_width+2) + loc_width + 1] = diff_recv_buffer[j];
       }
 
@@ -358,6 +367,7 @@ int main(int argc, char *argv[]) {
 			}
 		}
    }
+      time_5 = get_time();
 
    /*for (size_t i = 0; i < n_pixels_with_ghost; i++) {
       image[i] = 0;
@@ -369,7 +379,7 @@ int main(int argc, char *argv[]) {
             if (i+j == 0) continue;
             int current_start_row = i*(height/py);
             int currant_start_col = j*(width/px);
-            MPI_Recv(buf, (loc_height+2)*(loc_width+2), MPI_UNSIGNED_CHAR, i*px+j, 0, MPI_COMM_WORLD, NULL);
+            MPI_Recv(buf, (loc_height+2)*(loc_width+2), MPI_UNSIGNED_CHAR, i*px+j, 13, MPI_COMM_WORLD, NULL);
             int index = 0;
             for (int r = current_start_row; r < current_start_row + pheight; r++) {
                for (int c = currant_start_col; c < currant_start_col + pwidth; c++) {
@@ -378,6 +388,7 @@ int main(int argc, char *argv[]) {
             }
          }
       }
+      #pragma omp parallel for collapse(2)
       for (int i = 0; i < pheight; ++i) {
          for (int j = 0; j < pwidth; ++j) {
              image[i*(width+2) + j] = loc_image[i*pwidth + j];
@@ -385,18 +396,27 @@ int main(int argc, char *argv[]) {
       }
       free(buf);
    } else {
-      MPI_Send(loc_image, loc_size, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(loc_image, loc_size, MPI_UNSIGNED_CHAR, 0, 13, MPI_COMM_WORLD);
    }
 
    /*printf("sum %f Rank: %d\n",sum, rank);*/
-
-   time_3 = get_time();
-
-   if (rank != 0) {
+   if(rank != 0){
+      free(north_deriv);
+      free(south_deriv);
+      free(west_deriv);
+      free(east_deriv);
+      free(diff_coef);
+      free(diff_recv_buffer);
+      free(diff_send_buffer);
+      free(img_recv_buffer);
+      free(img_send_buffer);
+      free(loc_image);
       MPI_Finalize();
       return 0;
    }
-   time_5 = get_time();
+
+   MPI_Finalize();
+
 
    //Copy back the extendted image array
    for (int i = 1; i <= height ; i++) {
@@ -426,16 +446,20 @@ int main(int argc, char *argv[]) {
    time_7 = get_time();
 
    // Part VII: deallocate variables
-   //stbi_image_free(tmp_image);
-   //free(image);
-   //free(north_deriv);
-   //free(south_deriv);
-   //free(west_deriv);
-   //free(east_deriv);
-   //free(diff_coef);
+   stbi_image_free(tmp_image);
+   free(image);
+   free(north_deriv);
+   free(south_deriv);
+   free(west_deriv);
+   free(east_deriv);
+   free(diff_coef);
+   free(diff_recv_buffer);
+   free(diff_send_buffer);
+   free(img_recv_buffer);
+   free(img_send_buffer);
+   free(loc_image);
    time_8 = get_time();
 
-   MPI_Finalize();
    // print
    printf("Time spent in different stages of the application:\n");
    printf("%9.6f s => Part I: allocate and initialize variables\n", (time_1 - time_0));
@@ -445,37 +469,9 @@ int main(int argc, char *argv[]) {
    printf("%9.6f s => Part V: compute\n", (time_5 - time_4));
    printf("%9.6f s => Part VI: write image to file\n", (time_6 - time_5));
    printf("%9.6f s => Part VII: get average of sum of pixels for testing and calculate GFLOPS\n", (time_7 - time_6));
-   printf("%9.6f s => Part VIII: deallocate variables\n", (time_7 - time_6));
+   printf("%9.6f s => Part VIII: deallocate variables\n", (time_8 - time_7));
    printf("Total time: %9.6f s\n", (time_8 - time_0));
    printf("Average of sum of pixels: %9.6f\n", test);
    printf("GFLOPS: %f\n", gflops);
    return 0;
-}
-
-// Update the ghost cells of image at boundary
-void update_image_ghostcells(unsigned char *image, int height, int width)
-{
-
-   for (int h = 1; h < height-1; h++) {
-      image[h*width + 0] = image[h*width + width-2];
-      image[h*width + width-1] = image[h*width + 1];
-   }
-
-   for (int w = 1; w < width-1; w++) {
-      image[0*width + w] = image[(height-2)*width + w];
-      image[(height-1)*width + w] = image[1*width + w];
-   }
-}
-
-// Update the ghost cells of diff_coeff at boundary
-void update_coeff_ghostcells(float *diff_coeff, int height, int width)
-{
-
-   for (int h = 1; h < height-1; h++) {
-      diff_coeff[h*width + width-1] = diff_coeff[h*width + 1];
-   }
-
-   for (int w = 1; w < width-1; w++) {
-      diff_coeff[width*(height-1) + w] = diff_coeff[1*width + w];
-   }
 }

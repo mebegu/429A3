@@ -152,14 +152,10 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	printf("local sizes %d Rank: %d\n",loc_sizes[rank], rank);
 
 	loc_image = (unsigned char*) malloc(sizeof(unsigned char) * loc_sizes[rank]);
-//printf("initialized...\n");
 	MPI_Scatterv(image, loc_sizes, displs, MPI_UNSIGNED_CHAR, loc_image, loc_sizes[rank], MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
-	/*printf("sum %f Rank: %d\n",sum, rank);
-	printf("sum2 %f Rank: %d\n",sum2, rank);*/
-	printf("Scattered...\n");
+
 
 	time_3 = get_time();
 
@@ -224,7 +220,7 @@ int main(int argc, char *argv[]) {
 		mean = sum / (width*height); // --- 1 floating point arithmetic operations
 		variance = (sum2 / (width*height)) - mean * mean; // --- 3 floating point arithmetic operations
 		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
-		if(rank == 0) printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
+		//if(rank == 0) printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
 
 		//COMPUTE 1
 		// --- 32 floating point arithmetic operations per element -> 32*(height-1)*(width-1) in total
@@ -297,7 +293,7 @@ int main(int argc, char *argv[]) {
 
 		//printf("here\n");
 	}
-
+	time_5 = get_time();
 	for (size_t i = 0; i < numprocs; i++) {
 		displs[i] += (width+2);
 		loc_sizes[i] -= 2*(width+2);
@@ -309,10 +305,18 @@ int main(int argc, char *argv[]) {
 	);
 
 	if (rank != 0) {
+		free(north_deriv);
+		free(south_deriv);
+		free(west_deriv);
+		free(east_deriv);
+		free(diff_coef);
+		free(displs);
+		free(loc_sizes);
+		free(loc_image);
 		MPI_Finalize();
 		return 0;
 	}
-	time_5 = get_time();
+
 
 	//Copy back the extendted image array
 	for (int i = 1; i <= height ; i++) {
@@ -342,13 +346,16 @@ int main(int argc, char *argv[]) {
 	time_7 = get_time();
 
 	// Part VII: deallocate variables
-	//stbi_image_free(tmp_image);
-	//free(image);
-	//free(north_deriv);
-	//free(south_deriv);
-	//free(west_deriv);
-	//free(east_deriv);
-	//free(diff_coef);
+	stbi_image_free(tmp_image);
+	free(image);
+	free(north_deriv);
+	free(south_deriv);
+	free(west_deriv);
+	free(east_deriv);
+	free(diff_coef);
+	free(displs);
+	free(loc_sizes);
+	free(loc_image);
 	time_8 = get_time();
 
 	MPI_Finalize();
@@ -361,37 +368,9 @@ int main(int argc, char *argv[]) {
 	printf("%9.6f s => Part V: compute\n", (time_5 - time_4));
 	printf("%9.6f s => Part VI: write image to file\n", (time_6 - time_5));
 	printf("%9.6f s => Part VII: get average of sum of pixels for testing and calculate GFLOPS\n", (time_7 - time_6));
-	printf("%9.6f s => Part VIII: deallocate variables\n", (time_7 - time_6));
+	printf("%9.6f s => Part VIII: deallocate variables\n", (time_8 - time_7));
 	printf("Total time: %9.6f s\n", (time_8 - time_0));
 	printf("Average of sum of pixels: %9.6f\n", test);
 	printf("GFLOPS: %f\n", gflops);
 	return 0;
-}
-
-// Update the ghost cells of image at boundary
-void update_image_ghostcells(unsigned char *image, int height, int width)
-{
-
-  for (int h = 1; h < height-1; h++) {
-    image[h*width + 0] = image[h*width + width-2];
-    image[h*width + width-1] = image[h*width + 1];
-  }
-
-  for (int w = 1; w < width-1; w++) {
-    image[0*width + w] = image[(height-2)*width + w];
-    image[(height-1)*width + w] = image[1*width + w];
-  }
-}
-
-// Update the ghost cells of diff_coeff at boundary
-void update_coeff_ghostcells(float *diff_coeff, int height, int width)
-{
-
-  for (int h = 1; h < height-1; h++) {
-    diff_coeff[h*width + width-1] = diff_coeff[h*width + 1];
-  }
-
-  for (int w = 1; w < width-1; w++) {
-    diff_coeff[width*(height-1) + w] = diff_coeff[1*width + w];
-  }
 }
