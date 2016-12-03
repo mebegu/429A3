@@ -366,7 +366,6 @@ int run_1D(int argc, char *argv[])
 	free(loc_image);
 	time_8 = get_time();
 
-	MPI_Finalize();
 	// print
 	printf("Time spent in different stages of the application:\n");
 	printf("%9.6f s => Part I: allocate and initialize variables\n", (time_1 - time_0));
@@ -380,6 +379,7 @@ int run_1D(int argc, char *argv[])
 	printf("Total time: %9.6f s\n", (time_8 - time_0));
 	printf("Average of sum of pixels: %9.6f\n", test);
 	printf("GFLOPS: %f\n", gflops);
+   MPI_Finalize();
 	return 0;
 }
 
@@ -753,8 +753,6 @@ int run_2D(int argc, char *argv[])
       return 0;
    }
 
-   MPI_Finalize();
-
 
    //Copy back the extendted image array
    for (int i = 1; i <= height ; i++) {
@@ -811,6 +809,7 @@ int run_2D(int argc, char *argv[])
    printf("Total time: %9.6f s\n", (time_8 - time_0));
    printf("Average of sum of pixels: %9.6f\n", test);
    printf("GFLOPS: %f\n", gflops);
+   MPI_Finalize();
    return 0;
 }
 /*Serial code...*/
