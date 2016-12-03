@@ -615,9 +615,9 @@ int run_2D(int argc, char *argv[])
       #pragma omp parallel for reduction(+:loc_sum, loc_sum2)
       for(int i = loc_width+2; i < loc_size-(loc_width+2); ++i) {
          if (i%(loc_width+2) != 0 && i%(loc_width+2) != (loc_width+1)) {
-            tmp = loc_image[i];
-            loc_sum += tmp;
-            loc_sum2 += tmp * tmp;
+            double temp = loc_image[i];
+            loc_sum += temp;
+            loc_sum2 += temp * temp;
          }
       }
       MPI_Allreduce(&loc_sum, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -904,19 +904,21 @@ int run_serial(int argc, char *argv[])
 
 		// REDUCTION AND STATISTICS
 		// --- 3 floating point arithmetic operations per element -> 3*height*width in total
+      #pragma omp parallel for reduction(+:sum, sum2)
 		for (int i = 1; i <= height; i++) {
 			for (int j = 1; j <= width; j++) {
-			        tmp = image[i * (width+2) + j];	// current pixel value
-				sum += tmp; // --- 1 floating point arithmetic operations
-				sum2 += tmp * tmp; // --- 2 floating point arithmetic operations
+			   double temp = image[i * (width+2) + j];	// current pixel value
+				sum += temp; // --- 1 floating point arithmetic operations
+				sum2 += temp * temp; // --- 2 floating point arithmetic operations
 			}
 		}
 		mean = sum / n_pixels; // --- 1 floating point arithmetic operations
 		variance = (sum2 / n_pixels) - mean * mean; // --- 3 floating point arithmetic operations
 		std_dev = variance / (mean * mean); // --- 2 floating point arithmetic operations
-		printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
+		//printf("iter: %d mean: %f, variance: %f, std_dev: %f\n", iter, mean, variance, std_dev);
 		//COMPUTE 1
 		// --- 32 floating point arithmetic operations per element -> 32*(height-1)*(width-1) in total
+      #pragma omp parallel for private(k2, k, gradient_square, laplacian, num, den, std_dev2) collapse(2)
 		for (int i = 1; i <= height ; i++) {
 			for (int j = 1; j <= width ; j++) {
 			  k2 = (i-1) * width + (j-1);	// position of current element
@@ -946,6 +948,7 @@ int run_serial(int argc, char *argv[])
 
 		// COMPUTE 2
 		// divergence and image update --- 10 floating point arithmetic operations per element -> 10*(height-1)*(width-1) in total
+      #pragma omp parallel for private(diff_coef_north, diff_coef_south, diff_coef_west, diff_coef_east, divergence, k2,k)  collapse(2)
 		for (int i = 1; i <= height; i++) {
 			for (int j = 1; j <= width; j++) {
 			  k2 = (i-1) * width + (j-1);
@@ -1019,12 +1022,12 @@ int run_serial(int argc, char *argv[])
 // Update the ghost cells of image at boundary
 void update_image_ghostcells(unsigned char *image, int height, int width)
 {
-
+   #pragma omp parallel for
   for (int h = 1; h < height-1; h++) {
     image[h*width + 0] = image[h*width + width-2];
     image[h*width + width-1] = image[h*width + 1];
   }
-
+  #pragma omp parallel for
   for (int w = 1; w < width-1; w++) {
     image[0*width + w] = image[(height-2)*width + w];
     image[(height-1)*width + w] = image[1*width + w];
@@ -1034,11 +1037,11 @@ void update_image_ghostcells(unsigned char *image, int height, int width)
 // Update the ghost cells of diff_coeff at boundary
 void update_coeff_ghostcells(float *diff_coeff, int height, int width)
 {
-
+   #pragma omp parallel for
   for (int h = 1; h < height-1; h++) {
     diff_coeff[h*width + width-1] = diff_coeff[h*width + 1];
   }
-
+  #pragma omp parallel for
   for (int w = 1; w < width-1; w++) {
     diff_coeff[width*(height-1) + w] = diff_coeff[1*width + w];
   }
