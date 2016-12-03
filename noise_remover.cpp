@@ -380,7 +380,7 @@ int run_1D(int argc, char *argv[])
    	printf("Average of sum of pixels: %9.6f\n", test);
    	printf("GFLOPS: %f\n", gflops);
    }
-   //MPI_Finalize();
+   MPI_Finalize();
 	return 0;
 }
 
@@ -811,7 +811,7 @@ int run_2D(int argc, char *argv[])
       printf("Average of sum of pixels: %9.6f\n", test);
       printf("GFLOPS: %f\n", gflops);
    }
-   //MPI_Finalize();
+   MPI_Finalize();
    return 0;
 }
 /*Serial code...*/
